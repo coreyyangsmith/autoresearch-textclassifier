@@ -154,8 +154,18 @@ X_val = X_val_text.reset_index(drop=True).str.cat(
 # HashingVectorizer with large hash space: unlimited vocabulary, sublinear TF via TfidfTransformer
 hash_word = Pipeline([
     ("hv", HashingVectorizer(
-        ngram_range=(1, 2),
-        n_features=2**20,  # ~1M buckets, minimal collision
+        ngram_range=(1, 1),  # unigrams only -- faster convergence
+        n_features=2**19,    # 512k buckets for unigrams (much fewer collisions than bigrams)
+        alternate_sign=False,
+        norm="l2",
+    )),
+    ("tfidf", TfidfTransformer(sublinear_tf=True, use_idf=True)),
+])
+
+hash_bigram = Pipeline([
+    ("hv", HashingVectorizer(
+        ngram_range=(2, 2),  # bigrams only -- separate space
+        n_features=2**19,    # 512k buckets
         alternate_sign=False,
         norm="l2",
     )),
@@ -173,11 +183,13 @@ char_vec = TfidfVectorizer(
 
 X_train_word = hash_word.fit_transform(X_train)
 X_val_word = hash_word.transform(X_val)
+X_train_bigram = hash_bigram.fit_transform(X_train)
+X_val_bigram = hash_bigram.transform(X_val)
 X_train_char = char_vec.fit_transform(X_train)
 X_val_char = char_vec.transform(X_val)
 
-X_train_tfidf = sp.hstack([1.5 * X_train_word, 0.8 * X_train_char], format="csr")
-X_val_tfidf = sp.hstack([1.5 * X_val_word, 0.8 * X_val_char], format="csr")
+X_train_tfidf = sp.hstack([1.25 * X_train_word, 1.0 * X_train_bigram, 1.0 * X_train_char], format="csr")
+X_val_tfidf = sp.hstack([1.25 * X_val_word, 1.0 * X_val_bigram, 1.0 * X_val_char], format="csr")
 
 # Explicit field features: presence + log-length per text field + binary metadata
 field_train = build_field_features(df_train_split)
