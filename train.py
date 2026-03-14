@@ -11,7 +11,7 @@ import time
 import numpy as np
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.linear_model import LogisticRegression
-from sklearn.pipeline import Pipeline
+from sklearn.pipeline import FeatureUnion, Pipeline
 
 from prepare import TIME_BUDGET, load_data, evaluate_on_val
 
@@ -55,20 +55,29 @@ print(f"Time budget: {TIME_BUDGET}s")
 #   - Access y_val before computing y_pred (data leakage)
 #   - Use the test set (evaluate_on_test) for any decisions
 
-# Feature extraction
-vectorizer = TfidfVectorizer(
-    max_features=10_000,
-    ngram_range=(1, 2),
-    sublinear_tf=True,
-    min_df=2,
-)
+# Word and character TF-IDF capture both semantic phrases and scammy wording patterns.
+vectorizer = FeatureUnion([
+    ("word", TfidfVectorizer(
+        max_features=20_000,
+        ngram_range=(1, 2),
+        sublinear_tf=True,
+        min_df=2,
+    )),
+    ("char", TfidfVectorizer(
+        analyzer="char_wb",
+        ngram_range=(3, 5),
+        sublinear_tf=True,
+        min_df=2,
+        max_features=30_000,
+    )),
+])
 
 # Classifier -- balanced class weights handle the ~5% fake rate
 classifier = LogisticRegression(
     class_weight="balanced",
     max_iter=1000,
-    C=1.0,
-    solver="lbfgs",
+    C=1.5,
+    solver="liblinear",
 )
 
 # Pipeline: vectorizer -> classifier
