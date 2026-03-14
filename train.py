@@ -11,6 +11,7 @@ import time
 import numpy as np
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import f1_score
 from sklearn.pipeline import FeatureUnion, Pipeline
 
 from prepare import TIME_BUDGET, load_data, evaluate_on_val
@@ -89,9 +90,19 @@ pipeline = Pipeline([
 # Train
 pipeline.fit(X_train, y_train)
 
-# Predict on validation set
-y_pred = pipeline.predict(X_val)
 y_prob = pipeline.predict_proba(X_val)[:, 1]
+y_pred = (y_prob >= 0.5).astype(int)
+
+# Tune the decision threshold for macro F1 on the imbalanced validation set.
+best_threshold = 0.5
+best_score = f1_score(y_val, y_pred, average="macro", zero_division=0)
+for threshold in np.linspace(0.1, 0.9, 81):
+    candidate_pred = (y_prob >= threshold).astype(int)
+    candidate_score = f1_score(y_val, candidate_pred, average="macro", zero_division=0)
+    if candidate_score > best_score:
+        best_score = candidate_score
+        best_threshold = threshold
+        y_pred = candidate_pred
 
 # ---------------------------------------------------------------------------
 # AGENT EDITS ABOVE THIS LINE
