@@ -177,7 +177,7 @@ char_vec = TfidfVectorizer(
     ngram_range=(4, 6),
     sublinear_tf=True,
     min_df=1,
-    max_features=38_000,
+    max_features=50_000,
 )
 
 X_train_uni = hash_uni.fit_transform(X_train)
