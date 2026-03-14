@@ -165,7 +165,7 @@ hash_uni = Pipeline([
 hash_bi = Pipeline([
     ("hv", HashingVectorizer(
         ngram_range=(2, 2),
-        n_features=2**19,    # 512k buckets
+        n_features=2**18,    # 262k buckets for bigrams (fewer collisions for bigrams vs 1M combined)
         alternate_sign=False,
         norm="l2",
     )),
