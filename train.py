@@ -193,7 +193,7 @@ X_val_combined = sp.hstack([X_val_tfidf, sp.csr_matrix(field_val_scaled * 5.0)])
 classifier = LinearSVC(
     class_weight={0: 1.0, 1: 10.0},
     max_iter=5000,
-    C=1.0,
+    C=0.3,
     dual="auto",
 )
 
