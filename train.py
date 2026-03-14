@@ -8,7 +8,6 @@ The data loading and evaluation sections are fixed -- do not modify them.
 """
 
 import os
-import re
 import time
 import numpy as np
 import pandas as pd
@@ -143,19 +142,11 @@ X_train_text, X_val_text, _, _, df_train_split, df_val_split = train_test_split(
     stratify=y_trainval,
 )
 
-def clean_text(s: pd.Series) -> pd.Series:
-    """Strip HTML tags, normalize whitespace."""
-    s = s.str.replace(r"<[^>]+>", " ", regex=True)
-    s = s.str.replace(r"&[a-zA-Z]+;", " ", regex=True)
-    s = s.str.replace(r"\s+", " ", regex=True)
-    return s.str.strip()
-
-
-X_train = clean_text(X_train_text.reset_index(drop=True)).str.cat(
+X_train = X_train_text.reset_index(drop=True).str.cat(
     build_metadata_tokens(df_train_split).reset_index(drop=True),
     sep=" ",
 )
-X_val = clean_text(X_val_text.reset_index(drop=True)).str.cat(
+X_val = X_val_text.reset_index(drop=True).str.cat(
     build_metadata_tokens(df_val_split).reset_index(drop=True),
     sep=" ",
 )
@@ -185,30 +176,31 @@ X_val_word = hash_word.transform(X_val)
 X_train_char = char_vec.fit_transform(X_train)
 X_val_char = char_vec.transform(X_val)
 
-X_train_tfidf = sp.hstack([1.25 * X_train_word, 1.0 * X_train_char], format="csr")
-X_val_tfidf = sp.hstack([1.25 * X_val_word, 1.0 * X_val_char], format="csr")
-
 # Explicit field features: presence + log-length per text field + binary metadata
 field_train = build_field_features(df_train_split)
 field_val = build_field_features(df_val_split)
 scaler = MaxAbsScaler()
 field_train_scaled = scaler.fit_transform(field_train)
 field_val_scaled = scaler.transform(field_val)
+field_train_sp = sp.csr_matrix(field_train_scaled * 5.0)
+field_val_sp = sp.csr_matrix(field_val_scaled * 5.0)
 
-X_train_combined = sp.hstack([X_train_tfidf, sp.csr_matrix(field_train_scaled * 5.0)])
-X_val_combined = sp.hstack([X_val_tfidf, sp.csr_matrix(field_val_scaled * 5.0)])
+# Train a word+field SVC and a char+field SVC separately, then blend decision scores
+X_train_word_field = sp.hstack([X_train_word, field_train_sp], format="csr")
+X_val_word_field = sp.hstack([X_val_word, field_val_sp], format="csr")
+X_train_char_field = sp.hstack([X_train_char, field_train_sp], format="csr")
+X_val_char_field = sp.hstack([X_val_char, field_val_sp], format="csr")
 
-# Classifier -- linear margin model for sparse high-dimensional text features
-classifier = LinearSVC(
-    class_weight={0: 1.0, 1: 10.0},
-    max_iter=5000,
-    C=1.0,
-    dual="auto",
-)
+svc_word = LinearSVC(class_weight={0: 1.0, 1: 10.0}, max_iter=3000, C=1.0, dual="auto")
+svc_char = LinearSVC(class_weight={0: 1.0, 1: 10.0}, max_iter=3000, C=1.0, dual="auto")
 
-classifier.fit(X_train_combined, y_train)
+svc_word.fit(X_train_word_field, y_train)
+svc_char.fit(X_train_char_field, y_train)
 
-y_prob = classifier.decision_function(X_val_combined)
+# Blend: 60% word + 40% char (word features are richer with 1M hash)
+y_prob_word = svc_word.decision_function(X_val_word_field)
+y_prob_char = svc_char.decision_function(X_val_char_field)
+y_prob = 0.6 * y_prob_word + 0.4 * y_prob_char
 y_pred = (y_prob >= 0.0).astype(int)
 
 # Tune the decision threshold for macro F1 on the imbalanced validation set.
