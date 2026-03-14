@@ -194,10 +194,10 @@ X_val_combined = sp.hstack([X_val_tfidf, sp.csr_matrix(field_val_scaled * 5.0)])
 # enables fast convergence on large sparse data; calibrated probabilities for threshold tuning
 classifier = SGDClassifier(
     loss="modified_huber",
-    alpha=1e-4,
+    alpha=1e-5,
     class_weight={0: 1.0, 1: 10.0},
-    max_iter=200,
-    tol=1e-3,
+    max_iter=500,
+    tol=1e-4,
     n_jobs=-1,
     random_state=42,
 )
