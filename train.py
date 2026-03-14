@@ -129,7 +129,7 @@ X_val = X_val_text.reset_index(drop=True).str.cat(
 # Word and character TF-IDF capture both semantic phrases and scammy wording patterns.
 vectorizer = FeatureUnion([
     ("word", TfidfVectorizer(
-        max_features=50_000,
+        max_features=70_000,
         ngram_range=(1, 2),
         sublinear_tf=True,
         min_df=1,
