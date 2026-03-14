@@ -16,7 +16,7 @@ from sklearn.feature_extraction.text import HashingVectorizer, TfidfTransformer,
 from sklearn.metrics import f1_score
 from sklearn.model_selection import train_test_split
 from sklearn.pipeline import FeatureUnion, Pipeline
-from sklearn.feature_selection import SelectPercentile, chi2
+from sklearn.feature_selection import SelectPercentile, f_classif
 from sklearn.preprocessing import MaxAbsScaler
 from sklearn.svm import LinearSVC
 
@@ -178,7 +178,7 @@ X_train_char = char_vec.fit_transform(X_train)
 X_val_char = char_vec.transform(X_val)
 
 # Select top 15% of word features by chi2 to reduce feature space for faster SVC convergence
-selector = SelectPercentile(chi2, percentile=15)
+selector = SelectPercentile(f_classif, percentile=15)
 X_train_word_sel = selector.fit_transform(X_train_word, y_train)
 X_val_word_sel = selector.transform(X_val_word)
 
