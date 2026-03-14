@@ -192,8 +192,8 @@ X_val_combined = sp.hstack([X_val_tfidf, sp.csr_matrix(field_val_scaled * 5.0)])
 # Classifier -- linear margin model for sparse high-dimensional text features
 classifier = LinearSVC(
     class_weight={0: 1.0, 1: 10.0},
-    max_iter=2000,
-    C=0.4,
+    max_iter=2500,
+    C=0.45,
     dual="auto",
 )
 
