@@ -155,7 +155,7 @@ X_val = X_val_text.reset_index(drop=True).str.cat(
 hash_word = Pipeline([
     ("hv", HashingVectorizer(
         ngram_range=(1, 2),
-        n_features=2**18,  # ~262k buckets
+        n_features=2**20,  # ~1M buckets, minimal collision
         alternate_sign=False,
         norm="l2",
     )),
