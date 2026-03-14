@@ -155,7 +155,7 @@ X_val = X_val_text.reset_index(drop=True).str.cat(
 hash_word = Pipeline([
     ("hv", HashingVectorizer(
         ngram_range=(1, 2),
-        n_features=2**20,  # ~1M buckets, minimal collision
+        n_features=2**19,  # 512k buckets
         alternate_sign=False,
         norm="l2",
     )),
@@ -168,7 +168,7 @@ char_vec = TfidfVectorizer(
     ngram_range=(3, 5),
     sublinear_tf=True,
     min_df=1,
-    max_features=80_000,
+    max_features=60_000,
 )
 
 X_train_word = hash_word.fit_transform(X_train)
@@ -189,25 +189,15 @@ field_val_scaled = scaler.transform(field_val)
 X_train_combined = sp.hstack([X_train_tfidf, sp.csr_matrix(field_train_scaled * 5.0)])
 X_val_combined = sp.hstack([X_val_tfidf, sp.csr_matrix(field_val_scaled * 5.0)])
 
-# Oversample fake class 3x for training (different random offsets)
-fake_idx = np.where(y_train == 1)[0]
-real_idx = np.where(y_train == 0)[0]
-rng = np.random.default_rng(42)
-extra_idx = rng.choice(fake_idx, size=len(fake_idx) * 2, replace=True)
-all_idx = np.concatenate([real_idx, fake_idx, extra_idx])
-rng.shuffle(all_idx)
-X_train_os = X_train_combined[all_idx]
-y_train_os = np.concatenate([y_train[real_idx], y_train[fake_idx], y_train[extra_idx]])
-
 # Classifier -- linear margin model for sparse high-dimensional text features
 classifier = LinearSVC(
     class_weight={0: 1.0, 1: 10.0},
-    max_iter=5000,
+    max_iter=15000,
     C=1.0,
     dual="auto",
 )
 
-classifier.fit(X_train_os, y_train_os)
+classifier.fit(X_train_combined, y_train)
 
 y_prob = classifier.decision_function(X_val_combined)
 y_pred = (y_prob >= 0.0).astype(int)
