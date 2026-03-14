@@ -193,10 +193,10 @@ X_val_combined = sp.hstack([X_val_tfidf, sp.csr_matrix(field_val_scaled * 5.0)])
 # SGDClassifier: same hinge loss as LinearSVC but online optimization, much faster on large data
 classifier = SGDClassifier(
     loss="hinge",
-    alpha=1e-5,       # alpha = 1/C/n_samples equivalent
+    alpha=1e-6,
     class_weight={0: 1.0, 1: 10.0},
-    max_iter=1000,
-    tol=1e-4,
+    max_iter=2000,
+    tol=1e-5,
     shuffle=True,
     random_state=42,
     n_jobs=1,
