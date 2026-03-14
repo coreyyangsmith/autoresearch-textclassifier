@@ -146,7 +146,7 @@ vectorizer = FeatureUnion([
 
 # Classifier -- linear margin model for sparse high-dimensional text features
 classifier = LinearSVC(
-    class_weight="balanced",
+    class_weight={0: 1.0, 1: 8.0},
     max_iter=5000,
     C=1.0,
     dual="auto",
