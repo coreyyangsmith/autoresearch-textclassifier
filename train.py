@@ -8,7 +8,6 @@ The data loading and evaluation sections are fixed -- do not modify them.
 """
 
 import os
-import re
 import time
 import numpy as np
 import pandas as pd
@@ -143,18 +142,11 @@ X_train_text, X_val_text, _, _, df_train_split, df_val_split = train_test_split(
     stratify=y_trainval,
 )
 
-def normalize_text(s: pd.Series) -> pd.Series:
-    """Normalize URLs and numbers to reduce vocabulary noise."""
-    s = s.str.replace(r"https?://\S+|www\.\S+", " urltoken ", regex=True)
-    s = s.str.replace(r"\b\d+\b", " numtoken ", regex=True)
-    return s
-
-
-X_train = normalize_text(X_train_text.reset_index(drop=True)).str.cat(
+X_train = X_train_text.reset_index(drop=True).str.cat(
     build_metadata_tokens(df_train_split).reset_index(drop=True),
     sep=" ",
 )
-X_val = normalize_text(X_val_text.reset_index(drop=True)).str.cat(
+X_val = X_val_text.reset_index(drop=True).str.cat(
     build_metadata_tokens(df_val_split).reset_index(drop=True),
     sep=" ",
 )
@@ -163,7 +155,7 @@ X_val = normalize_text(X_val_text.reset_index(drop=True)).str.cat(
 hash_word = Pipeline([
     ("hv", HashingVectorizer(
         ngram_range=(1, 2),
-        n_features=2**20,  # ~1M buckets, minimal collision
+        n_features=2**18,  # 262k buckets for speed
         alternate_sign=False,
         norm="l2",
     )),
@@ -197,17 +189,32 @@ field_val_scaled = scaler.transform(field_val)
 X_train_combined = sp.hstack([X_train_tfidf, sp.csr_matrix(field_train_scaled * 5.0)])
 X_val_combined = sp.hstack([X_val_tfidf, sp.csr_matrix(field_val_scaled * 5.0)])
 
-# Classifier -- linear margin model for sparse high-dimensional text features
-classifier = LinearSVC(
-    class_weight={0: 1.0, 1: 10.0},
-    max_iter=5000,
-    C=1.0,
-    dual="auto",
-)
+# Train 3 SVCs on different bootstrap subsets and average predictions (bagging-like, fast)
+rng = np.random.default_rng(42)
+n_train = X_train_combined.shape[0]
+n_fake = y_train.sum()
+fake_idx = np.where(y_train == 1)[0]
+real_idx = np.where(y_train == 0)[0]
 
-classifier.fit(X_train_combined, y_train)
+y_prob_sum = np.zeros(X_val_combined.shape[0])
+for seed in range(3):
+    # Stratified bootstrap: always include all fake, subsample 80% of real
+    sub_real = rng.choice(real_idx, size=int(0.9 * len(real_idx)), replace=False)
+    sub_idx = np.concatenate([fake_idx, sub_real])
+    rng.shuffle(sub_idx)
+    X_sub = X_train_combined[sub_idx]
+    y_sub = y_train[sub_idx]
 
-y_prob = classifier.decision_function(X_val_combined)
+    clf = LinearSVC(
+        class_weight={0: 1.0, 1: 10.0},
+        max_iter=3000,
+        C=1.0,
+        dual="auto",
+    )
+    clf.fit(X_sub, y_sub)
+    y_prob_sum += clf.decision_function(X_val_combined)
+
+y_prob = y_prob_sum / 3.0
 y_pred = (y_prob >= 0.0).astype(int)
 
 # Tune the decision threshold for macro F1 on the imbalanced validation set.
