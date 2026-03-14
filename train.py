@@ -155,7 +155,7 @@ X_val = X_val_text.reset_index(drop=True).str.cat(
 hash_uni = Pipeline([
     ("hv", HashingVectorizer(
         ngram_range=(1, 1),
-        n_features=2**20,    # 1M buckets for unigrams (max vocab coverage)
+        n_features=2**19,    # 512k buckets
         alternate_sign=False,
         norm="l2",
     )),
@@ -174,7 +174,7 @@ hash_bi = Pipeline([
 
 char_vec = TfidfVectorizer(
     analyzer="char_wb",
-    ngram_range=(3, 5),
+    ngram_range=(3, 6),
     sublinear_tf=True,
     min_df=1,
     max_features=38_000,
