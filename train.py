@@ -16,9 +16,7 @@ from sklearn.feature_extraction.text import HashingVectorizer, TfidfTransformer,
 from sklearn.metrics import f1_score
 from sklearn.model_selection import train_test_split
 from sklearn.pipeline import FeatureUnion, Pipeline
-from sklearn.decomposition import TruncatedSVD
-from sklearn.linear_model import LogisticRegression
-from sklearn.preprocessing import MaxAbsScaler, Normalizer
+from sklearn.preprocessing import MaxAbsScaler
 from sklearn.svm import LinearSVC
 
 from prepare import (
@@ -188,30 +186,32 @@ scaler = MaxAbsScaler()
 field_train_scaled = scaler.fit_transform(field_train)
 field_val_scaled = scaler.transform(field_val)
 
-# LSA: compress large sparse matrix to dense 500-dim representation
-svd = TruncatedSVD(n_components=500, random_state=42)
-X_train_lsa = svd.fit_transform(X_train_tfidf)
-X_val_lsa = svd.transform(X_val_tfidf)
-normalizer = Normalizer()
-X_train_lsa = normalizer.fit_transform(X_train_lsa)
-X_val_lsa = normalizer.transform(X_val_lsa)
+X_train_combined = sp.hstack([X_train_tfidf, sp.csr_matrix(field_train_scaled * 5.0)])
+X_val_combined = sp.hstack([X_val_tfidf, sp.csr_matrix(field_val_scaled * 5.0)])
 
-# Stack dense LSA with field features
-X_train_combined = np.hstack([X_train_lsa, field_train_scaled * 5.0])
-X_val_combined = np.hstack([X_val_lsa, field_val_scaled * 5.0])
-
-# Fast LR on dense compressed features
-classifier = LogisticRegression(
+# Classifier -- linear margin model for sparse high-dimensional text features
+classifier = LinearSVC(
     class_weight={0: 1.0, 1: 10.0},
-    C=1.0,
     max_iter=5000,
-    solver="lbfgs",
-    random_state=42,
+    C=1.0,
+    dual="auto",
 )
 
 classifier.fit(X_train_combined, y_train)
+y_prob_main = classifier.decision_function(X_val_combined)
 
-y_prob = classifier.predict_proba(X_val_combined)[:, 1]
+# Fast auxiliary LinearSVC on field features only -- captures pure metadata signal
+field_clf = LinearSVC(
+    class_weight={0: 1.0, 1: 10.0},
+    max_iter=5000,
+    C=1.0,
+    dual="auto",
+)
+field_clf.fit(sp.csr_matrix(field_train_scaled), y_train)
+y_prob_field = field_clf.decision_function(sp.csr_matrix(field_val_scaled))
+
+# Blend: main model carries most weight, field-only classifier adds complementary signal
+y_prob = 0.85 * y_prob_main + 0.15 * y_prob_field
 y_pred = (y_prob >= 0.0).astype(int)
 
 # Tune the decision threshold for macro F1 on the imbalanced validation set.
