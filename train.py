@@ -8,6 +8,7 @@ The data loading and evaluation sections are fixed -- do not modify them.
 """
 
 import os
+import re
 import time
 import numpy as np
 import pandas as pd
@@ -17,7 +18,6 @@ from sklearn.metrics import f1_score
 from sklearn.model_selection import train_test_split
 from sklearn.pipeline import FeatureUnion, Pipeline
 from sklearn.preprocessing import MaxAbsScaler
-from sklearn.calibration import CalibratedClassifierCV
 from sklearn.svm import LinearSVC
 
 from prepare import (
@@ -143,11 +143,19 @@ X_train_text, X_val_text, _, _, df_train_split, df_val_split = train_test_split(
     stratify=y_trainval,
 )
 
-X_train = X_train_text.reset_index(drop=True).str.cat(
+def clean_text(s: pd.Series) -> pd.Series:
+    """Strip HTML tags, normalize whitespace."""
+    s = s.str.replace(r"<[^>]+>", " ", regex=True)
+    s = s.str.replace(r"&[a-zA-Z]+;", " ", regex=True)
+    s = s.str.replace(r"\s+", " ", regex=True)
+    return s.str.strip()
+
+
+X_train = clean_text(X_train_text.reset_index(drop=True)).str.cat(
     build_metadata_tokens(df_train_split).reset_index(drop=True),
     sep=" ",
 )
-X_val = X_val_text.reset_index(drop=True).str.cat(
+X_val = clean_text(X_val_text.reset_index(drop=True)).str.cat(
     build_metadata_tokens(df_val_split).reset_index(drop=True),
     sep=" ",
 )
@@ -190,18 +198,17 @@ field_val_scaled = scaler.transform(field_val)
 X_train_combined = sp.hstack([X_train_tfidf, sp.csr_matrix(field_train_scaled * 5.0)])
 X_val_combined = sp.hstack([X_val_tfidf, sp.csr_matrix(field_val_scaled * 5.0)])
 
-# LinearSVC with calibrated probabilities (cv=2 for speed), enables soft probability thresholding
-base_svc = LinearSVC(
+# Classifier -- linear margin model for sparse high-dimensional text features
+classifier = LinearSVC(
     class_weight={0: 1.0, 1: 10.0},
     max_iter=5000,
     C=1.0,
     dual="auto",
 )
-classifier = CalibratedClassifierCV(base_svc, cv=2, method="sigmoid")
 
 classifier.fit(X_train_combined, y_train)
 
-y_prob = classifier.predict_proba(X_val_combined)[:, 1]
+y_prob = classifier.decision_function(X_val_combined)
 y_pred = (y_prob >= 0.0).astype(int)
 
 # Tune the decision threshold for macro F1 on the imbalanced validation set.
