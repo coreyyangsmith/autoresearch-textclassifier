@@ -17,7 +17,7 @@ from sklearn.metrics import f1_score
 from sklearn.model_selection import train_test_split
 from sklearn.pipeline import FeatureUnion, Pipeline
 from sklearn.preprocessing import MaxAbsScaler
-from sklearn.linear_model import SGDClassifier
+from sklearn.calibration import CalibratedClassifierCV
 from sklearn.svm import LinearSVC
 
 from prepare import (
@@ -190,17 +190,14 @@ field_val_scaled = scaler.transform(field_val)
 X_train_combined = sp.hstack([X_train_tfidf, sp.csr_matrix(field_train_scaled * 5.0)])
 X_val_combined = sp.hstack([X_val_tfidf, sp.csr_matrix(field_val_scaled * 5.0)])
 
-# SGDClassifier with modified Huber loss - same as LinearSVC but stochastic optimization
-# enables fast convergence on large sparse data; calibrated probabilities for threshold tuning
-classifier = SGDClassifier(
-    loss="modified_huber",
-    alpha=1e-5,
+# LinearSVC with calibrated probabilities (cv=2 for speed), enables soft probability thresholding
+base_svc = LinearSVC(
     class_weight={0: 1.0, 1: 10.0},
-    max_iter=500,
-    tol=1e-4,
-    n_jobs=-1,
-    random_state=42,
+    max_iter=5000,
+    C=1.0,
+    dual="auto",
 )
+classifier = CalibratedClassifierCV(base_svc, cv=2, method="sigmoid")
 
 classifier.fit(X_train_combined, y_train)
 
