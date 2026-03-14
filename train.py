@@ -11,10 +11,12 @@ import os
 import time
 import numpy as np
 import pandas as pd
+import scipy.sparse as sp
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics import f1_score
 from sklearn.model_selection import train_test_split
 from sklearn.pipeline import FeatureUnion, Pipeline
+from sklearn.preprocessing import MaxAbsScaler
 from sklearn.svm import LinearSVC
 
 from prepare import (
@@ -68,6 +70,21 @@ print(f"Time budget: {TIME_BUDGET}s")
 #   - Fit any transformer on val data (data leakage)
 #   - Access y_val before computing y_pred (data leakage)
 #   - Use the test set (evaluate_on_test) for any decisions
+
+
+def build_field_features(df_split: pd.DataFrame) -> np.ndarray:
+    """Field-level presence and length features for fake job detection."""
+    text_cols = ["title", "company_profile", "description", "requirements", "benefits"]
+    feats = []
+    for col in text_cols:
+        text = df_split[col].fillna("")
+        feats.append((text.str.len() > 0).astype(float))      # field presence
+        feats.append(np.log1p(text.str.len()).values)           # log length
+    # Binary metadata fields
+    feats.append(df_split["has_company_logo"].fillna(0).astype(float).values)
+    feats.append(df_split["has_questions"].fillna(0).astype(float).values)
+    feats.append(df_split["telecommuting"].fillna(0).astype(float).values)
+    return np.column_stack(feats).astype(np.float32)
 
 
 def build_metadata_tokens(df: pd.DataFrame) -> pd.Series:
@@ -144,6 +161,19 @@ vectorizer = FeatureUnion([
     )),
 ], transformer_weights={"word": 1.25, "char": 1.0})
 
+X_train_tfidf = vectorizer.fit_transform(X_train)
+X_val_tfidf = vectorizer.transform(X_val)
+
+# Explicit field features: presence + log-length per text field + binary metadata
+field_train = build_field_features(df_train_split)
+field_val = build_field_features(df_val_split)
+scaler = MaxAbsScaler()
+field_train_scaled = scaler.fit_transform(field_train)
+field_val_scaled = scaler.transform(field_val)
+
+X_train_combined = sp.hstack([X_train_tfidf, sp.csr_matrix(field_train_scaled * 5.0)])
+X_val_combined = sp.hstack([X_val_tfidf, sp.csr_matrix(field_val_scaled * 5.0)])
+
 # Classifier -- linear margin model for sparse high-dimensional text features
 classifier = LinearSVC(
     class_weight={0: 1.0, 1: 8.0},
@@ -152,16 +182,9 @@ classifier = LinearSVC(
     dual="auto",
 )
 
-# Pipeline: vectorizer -> classifier
-pipeline = Pipeline([
-    ("vectorizer", vectorizer),
-    ("classifier", classifier),
-])
+classifier.fit(X_train_combined, y_train)
 
-# Train
-pipeline.fit(X_train, y_train)
-
-y_prob = pipeline.decision_function(X_val)
+y_prob = classifier.decision_function(X_val_combined)
 y_pred = (y_prob >= 0.0).astype(int)
 
 # Tune the decision threshold for macro F1 on the imbalanced validation set.
