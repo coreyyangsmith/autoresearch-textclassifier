@@ -155,26 +155,28 @@ X_val = X_val_text.reset_index(drop=True).str.cat(
 hash_word = Pipeline([
     ("hv", HashingVectorizer(
         ngram_range=(1, 2),
-        n_features=2**17,  # 128k buckets -- fast convergence
+        n_features=2**18,  # 262k buckets
         alternate_sign=False,
         norm="l2",
     )),
     ("tfidf", TfidfTransformer(sublinear_tf=True, use_idf=True)),
 ])
 
-# Standard char TF-IDF (bounded vocabulary for chars)
-char_vec = TfidfVectorizer(
-    analyzer="char_wb",
-    ngram_range=(3, 5),
-    sublinear_tf=True,
-    min_df=1,
-    max_features=80_000,
-)
+hash_char = Pipeline([
+    ("hv", HashingVectorizer(
+        analyzer="char_wb",
+        ngram_range=(3, 5),
+        n_features=2**17,  # 128k buckets for chars
+        alternate_sign=False,
+        norm="l2",
+    )),
+    ("tfidf", TfidfTransformer(sublinear_tf=True, use_idf=True)),
+])
 
 X_train_word = hash_word.fit_transform(X_train)
 X_val_word = hash_word.transform(X_val)
-X_train_char = char_vec.fit_transform(X_train)
-X_val_char = char_vec.transform(X_val)
+X_train_char = hash_char.fit_transform(X_train)
+X_val_char = hash_char.transform(X_val)
 
 X_train_tfidf = sp.hstack([1.25 * X_train_word, 1.0 * X_train_char], format="csr")
 X_val_tfidf = sp.hstack([1.25 * X_val_word, 1.0 * X_val_char], format="csr")
@@ -192,7 +194,7 @@ X_val_combined = sp.hstack([X_val_tfidf, sp.csr_matrix(field_val_scaled * 5.0)])
 # Classifier -- linear margin model for sparse high-dimensional text features
 classifier = LinearSVC(
     class_weight={0: 1.0, 1: 10.0},
-    max_iter=10000,
+    max_iter=5000,
     C=1.0,
     dual="auto",
 )
