@@ -72,6 +72,34 @@ print(f"Time budget: {TIME_BUDGET}s")
 #   - Use the test set (evaluate_on_test) for any decisions
 
 
+_location_fake_rate: dict = {}
+
+
+def fit_location_fake_rate(df_train: pd.DataFrame, y_train: np.ndarray) -> None:
+    """Compute fake rate per location from training data."""
+    loc = df_train["location"].fillna("unknown").astype(str)
+    for l, y in zip(loc, y_train):
+        if l not in _location_fake_rate:
+            _location_fake_rate[l] = [0, 0]
+        _location_fake_rate[l][0] += y
+        _location_fake_rate[l][1] += 1
+
+
+def get_location_fake_rate(df_split: pd.DataFrame) -> np.ndarray:
+    """Return smoothed fake rate per location (Laplace smoothing)."""
+    loc = df_split["location"].fillna("unknown").astype(str)
+    global_rate = 606 / 12516  # ~0.048
+    rates = []
+    for l in loc:
+        if l in _location_fake_rate and _location_fake_rate[l][1] >= 3:
+            n_fake, n_total = _location_fake_rate[l]
+            rate = (n_fake + global_rate) / (n_total + 1)
+        else:
+            rate = global_rate
+        rates.append(rate)
+    return np.array(rates, dtype=np.float32)
+
+
 def build_field_features(df_split: pd.DataFrame) -> np.ndarray:
     """Field-level presence and length features for fake job detection."""
     text_cols = ["title", "company_profile", "description", "requirements", "benefits"]
@@ -92,6 +120,8 @@ def build_field_features(df_split: pd.DataFrame) -> np.ndarray:
     feats.append((presence["company_profile"] * presence["requirements"]).values)
     feats.append((logo * presence["company_profile"]).values)
     feats.append(((1 - presence["company_profile"]) * (1 - logo)).values)
+    # Location-based fake rate (learned from training data)
+    feats.append(get_location_fake_rate(df_split))
     return np.column_stack(feats).astype(np.float32)
 
 
@@ -142,6 +172,9 @@ X_train_text, X_val_text, _, _, df_train_split, df_val_split = train_test_split(
     stratify=y_trainval,
 )
 
+# Fit location fake rate on training data before using it in field features
+fit_location_fake_rate(df_train_split, y_train)
+
 X_train = X_train_text.reset_index(drop=True).str.cat(
     build_metadata_tokens(df_train_split).reset_index(drop=True),
     sep=" ",
@@ -155,7 +188,7 @@ X_val = X_val_text.reset_index(drop=True).str.cat(
 hash_word = Pipeline([
     ("hv", HashingVectorizer(
         ngram_range=(1, 2),
-        n_features=2**18,  # 262k buckets for speed
+        n_features=2**20,  # ~1M buckets, minimal collision
         alternate_sign=False,
         norm="l2",
     )),
@@ -189,32 +222,17 @@ field_val_scaled = scaler.transform(field_val)
 X_train_combined = sp.hstack([X_train_tfidf, sp.csr_matrix(field_train_scaled * 5.0)])
 X_val_combined = sp.hstack([X_val_tfidf, sp.csr_matrix(field_val_scaled * 5.0)])
 
-# Train 3 SVCs on different bootstrap subsets and average predictions (bagging-like, fast)
-rng = np.random.default_rng(42)
-n_train = X_train_combined.shape[0]
-n_fake = y_train.sum()
-fake_idx = np.where(y_train == 1)[0]
-real_idx = np.where(y_train == 0)[0]
+# Classifier -- linear margin model for sparse high-dimensional text features
+classifier = LinearSVC(
+    class_weight={0: 1.0, 1: 10.0},
+    max_iter=5000,
+    C=1.0,
+    dual="auto",
+)
 
-y_prob_sum = np.zeros(X_val_combined.shape[0])
-for seed in range(3):
-    # Stratified bootstrap: always include all fake, subsample 80% of real
-    sub_real = rng.choice(real_idx, size=int(0.9 * len(real_idx)), replace=False)
-    sub_idx = np.concatenate([fake_idx, sub_real])
-    rng.shuffle(sub_idx)
-    X_sub = X_train_combined[sub_idx]
-    y_sub = y_train[sub_idx]
+classifier.fit(X_train_combined, y_train)
 
-    clf = LinearSVC(
-        class_weight={0: 1.0, 1: 10.0},
-        max_iter=3000,
-        C=1.0,
-        dual="auto",
-    )
-    clf.fit(X_sub, y_sub)
-    y_prob_sum += clf.decision_function(X_val_combined)
-
-y_prob = y_prob_sum / 3.0
+y_prob = classifier.decision_function(X_val_combined)
 y_pred = (y_prob >= 0.0).astype(int)
 
 # Tune the decision threshold for macro F1 on the imbalanced validation set.
