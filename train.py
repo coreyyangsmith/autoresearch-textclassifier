@@ -176,8 +176,19 @@ X_val_word = hash_word.transform(X_val)
 X_train_char = char_vec.fit_transform(X_train)
 X_val_char = char_vec.transform(X_val)
 
-X_train_tfidf = sp.hstack([1.25 * X_train_word, 1.0 * X_train_char], format="csr")
-X_val_tfidf = sp.hstack([1.25 * X_val_word, 1.0 * X_val_char], format="csr")
+# Also add a standard TF-IDF vectorizer for bounded vocabulary (no collisions for top words)
+std_word_vec = TfidfVectorizer(
+    max_features=30_000,
+    ngram_range=(1, 2),
+    sublinear_tf=True,
+    min_df=2,
+    max_df=0.98,
+)
+X_train_std = std_word_vec.fit_transform(X_train)
+X_val_std = std_word_vec.transform(X_val)
+
+X_train_tfidf = sp.hstack([1.0 * X_train_word, 1.0 * X_train_char, 0.75 * X_train_std], format="csr")
+X_val_tfidf = sp.hstack([1.0 * X_val_word, 1.0 * X_val_char, 0.75 * X_val_std], format="csr")
 
 # Explicit field features: presence + log-length per text field + binary metadata
 field_train = build_field_features(df_train_split)
