@@ -16,7 +16,6 @@ from sklearn.feature_extraction.text import HashingVectorizer, TfidfTransformer,
 from sklearn.metrics import f1_score
 from sklearn.model_selection import train_test_split
 from sklearn.pipeline import FeatureUnion, Pipeline
-from sklearn.feature_selection import SelectPercentile, f_classif
 from sklearn.preprocessing import MaxAbsScaler
 from sklearn.svm import LinearSVC
 
@@ -177,13 +176,8 @@ X_val_word = hash_word.transform(X_val)
 X_train_char = char_vec.fit_transform(X_train)
 X_val_char = char_vec.transform(X_val)
 
-# Select top 15% of word features by chi2 to reduce feature space for faster SVC convergence
-selector = SelectPercentile(f_classif, percentile=15)
-X_train_word_sel = selector.fit_transform(X_train_word, y_train)
-X_val_word_sel = selector.transform(X_val_word)
-
-X_train_tfidf = sp.hstack([1.25 * X_train_word_sel, 1.0 * X_train_char], format="csr")
-X_val_tfidf = sp.hstack([1.25 * X_val_word_sel, 1.0 * X_val_char], format="csr")
+X_train_tfidf = sp.hstack([1.25 * X_train_word, 1.0 * X_train_char], format="csr")
+X_val_tfidf = sp.hstack([1.25 * X_val_word, 1.0 * X_val_char], format="csr")
 
 # Explicit field features: presence + log-length per text field + binary metadata
 field_train = build_field_features(df_train_split)
@@ -197,7 +191,7 @@ X_val_combined = sp.hstack([X_val_tfidf, sp.csr_matrix(field_val_scaled * 5.0)])
 
 # Classifier -- linear margin model for sparse high-dimensional text features
 classifier = LinearSVC(
-    class_weight={0: 1.0, 1: 10.0},
+    class_weight={0: 1.0, 1: 20.0},
     max_iter=5000,
     C=1.0,
     dual="auto",
