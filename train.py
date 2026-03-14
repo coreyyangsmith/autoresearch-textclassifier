@@ -72,34 +72,6 @@ print(f"Time budget: {TIME_BUDGET}s")
 #   - Use the test set (evaluate_on_test) for any decisions
 
 
-_location_fake_rate: dict = {}
-
-
-def fit_location_fake_rate(df_train: pd.DataFrame, y_train: np.ndarray) -> None:
-    """Compute fake rate per location from training data."""
-    loc = df_train["location"].fillna("unknown").astype(str)
-    for l, y in zip(loc, y_train):
-        if l not in _location_fake_rate:
-            _location_fake_rate[l] = [0, 0]
-        _location_fake_rate[l][0] += y
-        _location_fake_rate[l][1] += 1
-
-
-def get_location_fake_rate(df_split: pd.DataFrame) -> np.ndarray:
-    """Return smoothed fake rate per location (Laplace smoothing)."""
-    loc = df_split["location"].fillna("unknown").astype(str)
-    global_rate = 606 / 12516  # ~0.048
-    rates = []
-    for l in loc:
-        if l in _location_fake_rate and _location_fake_rate[l][1] >= 3:
-            n_fake, n_total = _location_fake_rate[l]
-            rate = (n_fake + global_rate) / (n_total + 1)
-        else:
-            rate = global_rate
-        rates.append(rate)
-    return np.array(rates, dtype=np.float32)
-
-
 def build_field_features(df_split: pd.DataFrame) -> np.ndarray:
     """Field-level presence and length features for fake job detection."""
     text_cols = ["title", "company_profile", "description", "requirements", "benefits"]
@@ -120,8 +92,6 @@ def build_field_features(df_split: pd.DataFrame) -> np.ndarray:
     feats.append((presence["company_profile"] * presence["requirements"]).values)
     feats.append((logo * presence["company_profile"]).values)
     feats.append(((1 - presence["company_profile"]) * (1 - logo)).values)
-    # Location-based fake rate (learned from training data)
-    feats.append(get_location_fake_rate(df_split))
     return np.column_stack(feats).astype(np.float32)
 
 
@@ -172,9 +142,6 @@ X_train_text, X_val_text, _, _, df_train_split, df_val_split = train_test_split(
     stratify=y_trainval,
 )
 
-# Fit location fake rate on training data before using it in field features
-fit_location_fake_rate(df_train_split, y_train)
-
 X_train = X_train_text.reset_index(drop=True).str.cat(
     build_metadata_tokens(df_train_split).reset_index(drop=True),
     sep=" ",
@@ -209,8 +176,8 @@ X_val_word = hash_word.transform(X_val)
 X_train_char = char_vec.fit_transform(X_train)
 X_val_char = char_vec.transform(X_val)
 
-X_train_tfidf = sp.hstack([1.25 * X_train_word, 1.0 * X_train_char], format="csr")
-X_val_tfidf = sp.hstack([1.25 * X_val_word, 1.0 * X_val_char], format="csr")
+X_train_tfidf = sp.hstack([1.5 * X_train_word, 0.8 * X_train_char], format="csr")
+X_val_tfidf = sp.hstack([1.5 * X_val_word, 0.8 * X_val_char], format="csr")
 
 # Explicit field features: presence + log-length per text field + binary metadata
 field_train = build_field_features(df_train_split)
