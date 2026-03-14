@@ -16,6 +16,7 @@ from sklearn.feature_extraction.text import HashingVectorizer, TfidfTransformer,
 from sklearn.metrics import f1_score
 from sklearn.model_selection import train_test_split
 from sklearn.pipeline import FeatureUnion, Pipeline
+from sklearn.feature_selection import SelectPercentile, chi2
 from sklearn.preprocessing import MaxAbsScaler
 from sklearn.svm import LinearSVC
 
@@ -155,31 +156,34 @@ X_val = X_val_text.reset_index(drop=True).str.cat(
 hash_word = Pipeline([
     ("hv", HashingVectorizer(
         ngram_range=(1, 2),
-        n_features=2**18,  # 262k buckets
+        n_features=2**20,  # ~1M buckets, minimal collision
         alternate_sign=False,
         norm="l2",
     )),
     ("tfidf", TfidfTransformer(sublinear_tf=True, use_idf=True)),
 ])
 
-hash_char = Pipeline([
-    ("hv", HashingVectorizer(
-        analyzer="char_wb",
-        ngram_range=(3, 5),
-        n_features=2**17,  # 128k buckets for chars
-        alternate_sign=False,
-        norm="l2",
-    )),
-    ("tfidf", TfidfTransformer(sublinear_tf=True, use_idf=True)),
-])
+# Standard char TF-IDF (bounded vocabulary for chars)
+char_vec = TfidfVectorizer(
+    analyzer="char_wb",
+    ngram_range=(3, 5),
+    sublinear_tf=True,
+    min_df=1,
+    max_features=80_000,
+)
 
 X_train_word = hash_word.fit_transform(X_train)
 X_val_word = hash_word.transform(X_val)
-X_train_char = hash_char.fit_transform(X_train)
-X_val_char = hash_char.transform(X_val)
+X_train_char = char_vec.fit_transform(X_train)
+X_val_char = char_vec.transform(X_val)
 
-X_train_tfidf = sp.hstack([1.25 * X_train_word, 1.0 * X_train_char], format="csr")
-X_val_tfidf = sp.hstack([1.25 * X_val_word, 1.0 * X_val_char], format="csr")
+# Select top 15% of word features by chi2 to reduce feature space for faster SVC convergence
+selector = SelectPercentile(chi2, percentile=15)
+X_train_word_sel = selector.fit_transform(X_train_word, y_train)
+X_val_word_sel = selector.transform(X_val_word)
+
+X_train_tfidf = sp.hstack([1.25 * X_train_word_sel, 1.0 * X_train_char], format="csr")
+X_val_tfidf = sp.hstack([1.25 * X_val_word_sel, 1.0 * X_val_char], format="csr")
 
 # Explicit field features: presence + log-length per text field + binary metadata
 field_train = build_field_features(df_train_split)
