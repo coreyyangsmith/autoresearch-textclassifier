@@ -16,8 +16,9 @@ from sklearn.feature_extraction.text import HashingVectorizer, TfidfTransformer,
 from sklearn.metrics import f1_score
 from sklearn.model_selection import train_test_split
 from sklearn.pipeline import FeatureUnion, Pipeline
-from sklearn.preprocessing import MaxAbsScaler
-from sklearn.linear_model import PassiveAggressiveClassifier
+from sklearn.decomposition import TruncatedSVD
+from sklearn.linear_model import LogisticRegression
+from sklearn.preprocessing import MaxAbsScaler, Normalizer
 from sklearn.svm import LinearSVC
 
 from prepare import (
@@ -187,22 +188,30 @@ scaler = MaxAbsScaler()
 field_train_scaled = scaler.fit_transform(field_train)
 field_val_scaled = scaler.transform(field_val)
 
-X_train_combined = sp.hstack([X_train_tfidf, sp.csr_matrix(field_train_scaled * 5.0)])
-X_val_combined = sp.hstack([X_val_tfidf, sp.csr_matrix(field_val_scaled * 5.0)])
+# LSA: compress large sparse matrix to dense 500-dim representation
+svd = TruncatedSVD(n_components=500, random_state=42)
+X_train_lsa = svd.fit_transform(X_train_tfidf)
+X_val_lsa = svd.transform(X_val_tfidf)
+normalizer = Normalizer()
+X_train_lsa = normalizer.fit_transform(X_train_lsa)
+X_val_lsa = normalizer.transform(X_val_lsa)
 
-# PassiveAggressiveClassifier: online SVM-like algorithm, fast on large sparse data
-classifier = PassiveAggressiveClassifier(
-    C=0.1,
+# Stack dense LSA with field features
+X_train_combined = np.hstack([X_train_lsa, field_train_scaled * 5.0])
+X_val_combined = np.hstack([X_val_lsa, field_val_scaled * 5.0])
+
+# Fast LR on dense compressed features
+classifier = LogisticRegression(
     class_weight={0: 1.0, 1: 10.0},
-    max_iter=1000,
-    tol=1e-4,
+    C=1.0,
+    max_iter=5000,
+    solver="lbfgs",
     random_state=42,
-    n_jobs=-1,
 )
 
 classifier.fit(X_train_combined, y_train)
 
-y_prob = classifier.decision_function(X_val_combined)
+y_prob = classifier.predict_proba(X_val_combined)[:, 1]
 y_pred = (y_prob >= 0.0).astype(int)
 
 # Tune the decision threshold for macro F1 on the imbalanced validation set.
