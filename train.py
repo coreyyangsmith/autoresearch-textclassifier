@@ -142,7 +142,7 @@ vectorizer = FeatureUnion([
         min_df=1,
         max_features=80_000,
     )),
-])
+], transformer_weights={"word": 1.25, "char": 1.0})
 
 # Classifier -- linear margin model for sparse high-dimensional text features
 classifier = LinearSVC(
