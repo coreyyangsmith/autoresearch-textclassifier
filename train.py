@@ -7,14 +7,27 @@ The agent modifies everything between the AGENT EDITS markers.
 The data loading and evaluation sections are fixed -- do not modify them.
 """
 
+import os
 import time
 import numpy as np
+import pandas as pd
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import f1_score
+from sklearn.model_selection import train_test_split
 from sklearn.pipeline import FeatureUnion, Pipeline
 
-from prepare import TIME_BUDGET, load_data, evaluate_on_val
+from prepare import (
+    CACHE_DIR,
+    DATASET_FILENAME,
+    RANDOM_SEED,
+    TEST_SIZE,
+    TIME_BUDGET,
+    VAL_SIZE,
+    assemble_text,
+    evaluate_on_val,
+    load_data,
+)
 
 t_start = time.time()
 
@@ -55,6 +68,60 @@ print(f"Time budget: {TIME_BUDGET}s")
 #   - Fit any transformer on val data (data leakage)
 #   - Access y_val before computing y_pred (data leakage)
 #   - Use the test set (evaluate_on_test) for any decisions
+
+
+def build_metadata_tokens(df: pd.DataFrame) -> pd.Series:
+    """Encode structured job metadata as sparse textual tokens."""
+    columns = [
+        "telecommuting",
+        "has_company_logo",
+        "has_questions",
+        "employment_type",
+        "required_experience",
+        "required_education",
+        "industry",
+        "function",
+    ]
+    token_parts = []
+    for column in columns:
+        values = df[column].fillna("missing").astype(str).str.lower().str.strip()
+        values = values.str.replace(r"[^a-z0-9]+", "_", regex=True).str.strip("_")
+        values = values.where(values.ne(""), "missing")
+        token_parts.append("__" + column + "_" + values)
+    return token_parts[0].str.cat(token_parts[1:], sep=" ")
+
+
+data_path = os.path.join(CACHE_DIR, "data", DATASET_FILENAME)
+df = pd.read_csv(data_path)
+X_full = assemble_text(df)
+y_full = df["fraudulent"].values.astype(int)
+
+X_trainval_text, _, y_trainval, _, df_trainval, _ = train_test_split(
+    X_full,
+    y_full,
+    df,
+    test_size=TEST_SIZE,
+    random_state=RANDOM_SEED,
+    stratify=y_full,
+)
+val_fraction = VAL_SIZE / (1.0 - TEST_SIZE)
+X_train_text, X_val_text, _, _, df_train_split, df_val_split = train_test_split(
+    X_trainval_text,
+    y_trainval,
+    df_trainval,
+    test_size=val_fraction,
+    random_state=RANDOM_SEED,
+    stratify=y_trainval,
+)
+
+X_train = X_train_text.reset_index(drop=True).str.cat(
+    build_metadata_tokens(df_train_split).reset_index(drop=True),
+    sep=" ",
+)
+X_val = X_val_text.reset_index(drop=True).str.cat(
+    build_metadata_tokens(df_val_split).reset_index(drop=True),
+    sep=" ",
+)
 
 # Word and character TF-IDF capture both semantic phrases and scammy wording patterns.
 vectorizer = FeatureUnion([
