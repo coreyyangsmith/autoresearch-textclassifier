@@ -189,15 +189,25 @@ field_val_scaled = scaler.transform(field_val)
 X_train_combined = sp.hstack([X_train_tfidf, sp.csr_matrix(field_train_scaled * 5.0)])
 X_val_combined = sp.hstack([X_val_tfidf, sp.csr_matrix(field_val_scaled * 5.0)])
 
+# Oversample fake class 3x for training (different random offsets)
+fake_idx = np.where(y_train == 1)[0]
+real_idx = np.where(y_train == 0)[0]
+rng = np.random.default_rng(42)
+extra_idx = rng.choice(fake_idx, size=len(fake_idx) * 2, replace=True)
+all_idx = np.concatenate([real_idx, fake_idx, extra_idx])
+rng.shuffle(all_idx)
+X_train_os = X_train_combined[all_idx]
+y_train_os = np.concatenate([y_train[real_idx], y_train[fake_idx], y_train[extra_idx]])
+
 # Classifier -- linear margin model for sparse high-dimensional text features
 classifier = LinearSVC(
-    class_weight={0: 1.0, 1: 20.0},
+    class_weight={0: 1.0, 1: 10.0},
     max_iter=5000,
     C=1.0,
     dual="auto",
 )
 
-classifier.fit(X_train_combined, y_train)
+classifier.fit(X_train_os, y_train_os)
 
 y_prob = classifier.decision_function(X_val_combined)
 y_pred = (y_prob >= 0.0).astype(int)
