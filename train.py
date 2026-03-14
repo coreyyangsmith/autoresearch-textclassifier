@@ -8,6 +8,7 @@ The data loading and evaluation sections are fixed -- do not modify them.
 """
 
 import os
+import re
 import time
 import numpy as np
 import pandas as pd
@@ -95,6 +96,27 @@ def build_field_features(df_split: pd.DataFrame) -> np.ndarray:
     return np.column_stack(feats).astype(np.float32)
 
 
+def build_suspicious_tokens(df: pd.DataFrame) -> pd.Series:
+    """Add special tokens for suspicious patterns in fake job postings."""
+    desc = df["description"].fillna("") + " " + df["requirements"].fillna("") + " " + df["company_profile"].fillna("")
+    tokens = []
+    # Email address patterns (often in fake postings for contact)
+    has_email = desc.str.contains(r"[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}", regex=True, na=False)
+    # Work-from-home or remote patterns in suspicious context
+    has_wfh = desc.str.contains(r"\b(work from home|work-from-home|wfh|remote work)\b", case=False, regex=True, na=False)
+    # Urgency signals
+    has_urgency = desc.str.contains(r"\b(urgent|immediately|asap|apply now|limited)\b", case=False, regex=True, na=False)
+    # No company name (title only)
+    no_company = df["company_profile"].fillna("").str.len() == 0
+
+    result = pd.Series([""] * len(df), index=df.index)
+    result = result.where(~has_email, result + " __has_email")
+    result = result.where(~has_wfh, result + " __has_wfh")
+    result = result.where(~has_urgency, result + " __has_urgency")
+    result = result.where(~no_company, result + " __no_company_profile")
+    return result
+
+
 def build_metadata_tokens(df: pd.DataFrame) -> pd.Series:
     """Encode structured job metadata as sparse textual tokens."""
     columns = [
@@ -143,11 +165,17 @@ X_train_text, X_val_text, _, _, df_train_split, df_val_split = train_test_split(
 )
 
 X_train = X_train_text.reset_index(drop=True).str.cat(
-    build_metadata_tokens(df_train_split).reset_index(drop=True),
+    [
+        build_metadata_tokens(df_train_split).reset_index(drop=True),
+        build_suspicious_tokens(df_train_split).reset_index(drop=True),
+    ],
     sep=" ",
 )
 X_val = X_val_text.reset_index(drop=True).str.cat(
-    build_metadata_tokens(df_val_split).reset_index(drop=True),
+    [
+        build_metadata_tokens(df_val_split).reset_index(drop=True),
+        build_suspicious_tokens(df_val_split).reset_index(drop=True),
+    ],
     sep=" ",
 )
 
@@ -198,20 +226,8 @@ classifier = LinearSVC(
 )
 
 classifier.fit(X_train_combined, y_train)
-y_prob_main = classifier.decision_function(X_val_combined)
 
-# Fast auxiliary LinearSVC on field features only -- captures pure metadata signal
-field_clf = LinearSVC(
-    class_weight={0: 1.0, 1: 10.0},
-    max_iter=5000,
-    C=1.0,
-    dual="auto",
-)
-field_clf.fit(sp.csr_matrix(field_train_scaled), y_train)
-y_prob_field = field_clf.decision_function(sp.csr_matrix(field_val_scaled))
-
-# Blend: main model carries most weight, field-only classifier adds complementary signal
-y_prob = 0.85 * y_prob_main + 0.15 * y_prob_field
+y_prob = classifier.decision_function(X_val_combined)
 y_pred = (y_prob >= 0.0).astype(int)
 
 # Tune the decision threshold for macro F1 on the imbalanced validation set.
