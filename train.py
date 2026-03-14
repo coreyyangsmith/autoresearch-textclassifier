@@ -17,7 +17,6 @@ from sklearn.metrics import f1_score
 from sklearn.model_selection import train_test_split
 from sklearn.pipeline import FeatureUnion, Pipeline
 from sklearn.preprocessing import MaxAbsScaler
-from sklearn.linear_model import SGDClassifier
 from sklearn.svm import LinearSVC
 
 from prepare import (
@@ -156,12 +155,20 @@ X_val = X_val_text.reset_index(drop=True).str.cat(
 hash_word = Pipeline([
     ("hv", HashingVectorizer(
         ngram_range=(1, 2),
-        n_features=2**20,  # ~1M buckets, minimal collision
+        n_features=2**19,  # 512k buckets
         alternate_sign=False,
         norm="l2",
     )),
     ("tfidf", TfidfTransformer(sublinear_tf=True, use_idf=True)),
 ])
+
+# Standard trigram TF-IDF (bounded vocabulary for 3-grams)
+trig_vec = TfidfVectorizer(
+    ngram_range=(3, 3),
+    sublinear_tf=True,
+    min_df=2,
+    max_features=30_000,
+)
 
 # Standard char TF-IDF (bounded vocabulary for chars)
 char_vec = TfidfVectorizer(
@@ -174,11 +181,13 @@ char_vec = TfidfVectorizer(
 
 X_train_word = hash_word.fit_transform(X_train)
 X_val_word = hash_word.transform(X_val)
+X_train_trig = trig_vec.fit_transform(X_train)
+X_val_trig = trig_vec.transform(X_val)
 X_train_char = char_vec.fit_transform(X_train)
 X_val_char = char_vec.transform(X_val)
 
-X_train_tfidf = sp.hstack([1.25 * X_train_word, 1.0 * X_train_char], format="csr")
-X_val_tfidf = sp.hstack([1.25 * X_val_word, 1.0 * X_val_char], format="csr")
+X_train_tfidf = sp.hstack([1.0 * X_train_word, 0.5 * X_train_trig, 1.0 * X_train_char], format="csr")
+X_val_tfidf = sp.hstack([1.0 * X_val_word, 0.5 * X_val_trig, 1.0 * X_val_char], format="csr")
 
 # Explicit field features: presence + log-length per text field + binary metadata
 field_train = build_field_features(df_train_split)
@@ -190,16 +199,12 @@ field_val_scaled = scaler.transform(field_val)
 X_train_combined = sp.hstack([X_train_tfidf, sp.csr_matrix(field_train_scaled * 5.0)])
 X_val_combined = sp.hstack([X_val_tfidf, sp.csr_matrix(field_val_scaled * 5.0)])
 
-# SGDClassifier: same hinge loss as LinearSVC but online optimization, much faster on large data
-classifier = SGDClassifier(
-    loss="hinge",
-    alpha=1e-6,
+# Classifier -- linear margin model for sparse high-dimensional text features
+classifier = LinearSVC(
     class_weight={0: 1.0, 1: 10.0},
-    max_iter=2000,
-    tol=1e-5,
-    shuffle=True,
-    random_state=42,
-    n_jobs=1,
+    max_iter=5000,
+    C=1.0,
+    dual="auto",
 )
 
 classifier.fit(X_train_combined, y_train)
