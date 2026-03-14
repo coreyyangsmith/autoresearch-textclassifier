@@ -148,7 +148,7 @@ vectorizer = FeatureUnion([
 classifier = LogisticRegression(
     class_weight="balanced",
     max_iter=1000,
-    C=2.5,
+    C=4.0,
     solver="liblinear",
 )
 
