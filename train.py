@@ -154,7 +154,7 @@ X_val = X_val_text.reset_index(drop=True).str.cat(
 # HashingVectorizer with large hash space: unlimited vocabulary, sublinear TF via TfidfTransformer
 hash_uni = Pipeline([
     ("hv", HashingVectorizer(
-        ngram_range=(1, 1),  # unigrams only
+        ngram_range=(1, 1),
         n_features=2**19,    # 512k buckets
         alternate_sign=False,
         norm="l2",
@@ -164,7 +164,7 @@ hash_uni = Pipeline([
 
 hash_bi = Pipeline([
     ("hv", HashingVectorizer(
-        ngram_range=(2, 2),  # bigrams only in separate space
+        ngram_range=(2, 2),
         n_features=2**19,    # 512k buckets
         alternate_sign=False,
         norm="l2",
@@ -172,13 +172,12 @@ hash_bi = Pipeline([
     ("tfidf", TfidfTransformer(sublinear_tf=True, use_idf=True)),
 ])
 
-# Standard char TF-IDF (bounded vocabulary for chars)
 char_vec = TfidfVectorizer(
     analyzer="char_wb",
     ngram_range=(3, 5),
     sublinear_tf=True,
     min_df=1,
-    max_features=35_000,
+    max_features=38_000,
 )
 
 X_train_uni = hash_uni.fit_transform(X_train)
