@@ -17,6 +17,7 @@ from sklearn.metrics import f1_score
 from sklearn.model_selection import train_test_split
 from sklearn.pipeline import FeatureUnion, Pipeline
 from sklearn.preprocessing import MaxAbsScaler
+from sklearn.linear_model import LogisticRegression
 from sklearn.svm import LinearSVC
 
 from prepare import (
@@ -155,7 +156,7 @@ X_val = X_val_text.reset_index(drop=True).str.cat(
 hash_word = Pipeline([
     ("hv", HashingVectorizer(
         ngram_range=(1, 2),
-        n_features=2**19,  # 512k buckets
+        n_features=2**20,  # ~1M buckets, minimal collision
         alternate_sign=False,
         norm="l2",
     )),
@@ -168,7 +169,7 @@ char_vec = TfidfVectorizer(
     ngram_range=(3, 5),
     sublinear_tf=True,
     min_df=1,
-    max_features=60_000,
+    max_features=80_000,
 )
 
 X_train_word = hash_word.fit_transform(X_train)
@@ -189,17 +190,20 @@ field_val_scaled = scaler.transform(field_val)
 X_train_combined = sp.hstack([X_train_tfidf, sp.csr_matrix(field_train_scaled * 5.0)])
 X_val_combined = sp.hstack([X_val_tfidf, sp.csr_matrix(field_val_scaled * 5.0)])
 
-# Classifier -- linear margin model for sparse high-dimensional text features
-classifier = LinearSVC(
+# LogisticRegression with liblinear solver -- same as LinearSVC but smoother loss,
+# faster convergence, native probability output for better threshold tuning
+classifier = LogisticRegression(
     class_weight={0: 1.0, 1: 10.0},
-    max_iter=15000,
+    max_iter=5000,
     C=1.0,
-    dual="auto",
+    solver="liblinear",
+    penalty="l2",
+    random_state=42,
 )
 
 classifier.fit(X_train_combined, y_train)
 
-y_prob = classifier.decision_function(X_val_combined)
+y_prob = classifier.predict_proba(X_val_combined)[:, 1]
 y_pred = (y_prob >= 0.0).astype(int)
 
 # Tune the decision threshold for macro F1 on the imbalanced validation set.
