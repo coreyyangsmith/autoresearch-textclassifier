@@ -180,25 +180,15 @@ char_vec = TfidfVectorizer(
     max_features=38_000,
 )
 
-char_raw_vec = TfidfVectorizer(
-    analyzer="char",        # raw char (no word boundaries) captures cross-word patterns
-    ngram_range=(4, 4),
-    sublinear_tf=True,
-    min_df=2,
-    max_features=20_000,
-)
-
 X_train_uni = hash_uni.fit_transform(X_train)
 X_val_uni = hash_uni.transform(X_val)
 X_train_bi = hash_bi.fit_transform(X_train)
 X_val_bi = hash_bi.transform(X_val)
 X_train_char = char_vec.fit_transform(X_train)
 X_val_char = char_vec.transform(X_val)
-X_train_char_raw = char_raw_vec.fit_transform(X_train)
-X_val_char_raw = char_raw_vec.transform(X_val)
 
-X_train_tfidf = sp.hstack([1.25 * X_train_uni, 1.0 * X_train_bi, 1.0 * X_train_char, 0.75 * X_train_char_raw], format="csr")
-X_val_tfidf = sp.hstack([1.25 * X_val_uni, 1.0 * X_val_bi, 1.0 * X_val_char, 0.75 * X_val_char_raw], format="csr")
+X_train_tfidf = sp.hstack([1.0 * X_train_uni, 1.0 * X_train_bi, 1.25 * X_train_char], format="csr")
+X_val_tfidf = sp.hstack([1.0 * X_val_uni, 1.0 * X_val_bi, 1.25 * X_val_char], format="csr")
 
 # Explicit field features: presence + log-length per text field + binary metadata
 field_train = build_field_features(df_train_split)
