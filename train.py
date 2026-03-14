@@ -92,6 +92,10 @@ def build_field_features(df_split: pd.DataFrame) -> np.ndarray:
     feats.append((presence["company_profile"] * presence["requirements"]).values)
     feats.append((logo * presence["company_profile"]).values)
     feats.append(((1 - presence["company_profile"]) * (1 - logo)).values)
+    # Additional interactions for edge cases
+    feats.append(((1 - presence["benefits"]) * (1 - presence["requirements"])).values)
+    feats.append((questions * logo).values)
+    feats.append((presence["description"] * (1 - presence["company_profile"])).values)
     return np.column_stack(feats).astype(np.float32)
 
 
@@ -180,27 +184,15 @@ char_vec = TfidfVectorizer(
     max_features=38_000,
 )
 
-hash_tri = Pipeline([
-    ("hv", HashingVectorizer(
-        ngram_range=(3, 3),
-        n_features=2**19,    # 512k buckets for trigrams
-        alternate_sign=False,
-        norm="l2",
-    )),
-    ("tfidf", TfidfTransformer(sublinear_tf=True, use_idf=True)),
-])
-
 X_train_uni = hash_uni.fit_transform(X_train)
 X_val_uni = hash_uni.transform(X_val)
 X_train_bi = hash_bi.fit_transform(X_train)
 X_val_bi = hash_bi.transform(X_val)
-X_train_tri = hash_tri.fit_transform(X_train)
-X_val_tri = hash_tri.transform(X_val)
 X_train_char = char_vec.fit_transform(X_train)
 X_val_char = char_vec.transform(X_val)
 
-X_train_tfidf = sp.hstack([1.25 * X_train_uni, 1.0 * X_train_bi, 0.75 * X_train_tri, 1.0 * X_train_char], format="csr")
-X_val_tfidf = sp.hstack([1.25 * X_val_uni, 1.0 * X_val_bi, 0.75 * X_val_tri, 1.0 * X_val_char], format="csr")
+X_train_tfidf = sp.hstack([1.25 * X_train_uni, 1.0 * X_train_bi, 1.0 * X_train_char], format="csr")
+X_val_tfidf = sp.hstack([1.25 * X_val_uni, 1.0 * X_val_bi, 1.0 * X_val_char], format="csr")
 
 # Explicit field features: presence + log-length per text field + binary metadata
 field_train = build_field_features(df_train_split)
