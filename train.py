@@ -8,6 +8,7 @@ The data loading and evaluation sections are fixed -- do not modify them.
 """
 
 import os
+import re
 import time
 import numpy as np
 import pandas as pd
@@ -72,26 +73,51 @@ print(f"Time budget: {TIME_BUDGET}s")
 #   - Use the test set (evaluate_on_test) for any decisions
 
 
+def count_urls(text: str) -> int:
+    return len(re.findall(r"https?://\S+|www\.\S+", text))
+
+
+def count_html_tags(text: str) -> int:
+    return len(re.findall(r"<[^>]+>", text))
+
+
 def build_field_features(df_split: pd.DataFrame) -> np.ndarray:
     """Field-level presence and length features for fake job detection."""
     text_cols = ["title", "company_profile", "description", "requirements", "benefits"]
     feats = []
     presence = {}
+    lengths = {}
     for col in text_cols:
         text = df_split[col].fillna("")
         p = (text.str.len() > 0).astype(float)
         presence[col] = p
-        feats.append(p)                                        # field presence
-        feats.append(np.log1p(text.str.len()).values)          # log length
+        lengths[col] = np.log1p(text.str.len())
+        feats.append(p)                             # field presence
+        feats.append(lengths[col].values)           # log length
     # Binary metadata fields
     logo = df_split["has_company_logo"].fillna(0).astype(float)
     questions = df_split["has_questions"].fillna(0).astype(float)
     telecommute = df_split["telecommuting"].fillna(0).astype(float)
     feats.extend([logo.values, questions.values, telecommute.values])
-    # Key interaction features: absence of both company_profile and requirements = strong fake signal
+    # Key interaction features
     feats.append((presence["company_profile"] * presence["requirements"]).values)
     feats.append((logo * presence["company_profile"]).values)
     feats.append(((1 - presence["company_profile"]) * (1 - logo)).values)
+    # Additional interactions: fake jobs often missing benefits AND requirements
+    feats.append(((1 - presence["benefits"]) * (1 - presence["requirements"])).values)
+    feats.append((presence["benefits"] * presence["company_profile"]).values)
+    feats.append((logo * questions).values)
+    # URL counts and HTML tags in description (fake postings often have more URLs/HTML)
+    desc = df_split["description"].fillna("")
+    feats.append(np.log1p(desc.apply(count_urls)).values)
+    feats.append(np.log1p(desc.apply(count_html_tags)).values)
+    # Total number of non-empty fields (fewer = more suspicious)
+    total_fields = sum(presence[c] for c in text_cols)
+    feats.append(total_fields.values)
+    # Description to requirements length ratio (anomaly in ratio = fake signal)
+    desc_len = np.log1p(df_split["description"].fillna("").str.len())
+    req_len = np.log1p(df_split["requirements"].fillna("").str.len())
+    feats.append((desc_len - req_len).values)
     return np.column_stack(feats).astype(np.float32)
 
 
@@ -155,7 +181,7 @@ X_val = X_val_text.reset_index(drop=True).str.cat(
 hash_word = Pipeline([
     ("hv", HashingVectorizer(
         ngram_range=(1, 2),
-        n_features=2**18,  # ~256k buckets, fast but low collision for 12k docs
+        n_features=2**20,  # ~1M buckets, minimal collision
         alternate_sign=False,
         norm="l2",
     )),
@@ -168,7 +194,7 @@ char_vec = TfidfVectorizer(
     ngram_range=(3, 5),
     sublinear_tf=True,
     min_df=1,
-    max_features=100_000,
+    max_features=80_000,
 )
 
 X_train_word = hash_word.fit_transform(X_train)
@@ -193,7 +219,7 @@ X_val_combined = sp.hstack([X_val_tfidf, sp.csr_matrix(field_val_scaled * 5.0)])
 classifier = LinearSVC(
     class_weight={0: 1.0, 1: 10.0},
     max_iter=5000,
-    C=1.2,
+    C=1.0,
     dual="auto",
 )
 
