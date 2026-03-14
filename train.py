@@ -12,10 +12,10 @@ import time
 import numpy as np
 import pandas as pd
 from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import f1_score
 from sklearn.model_selection import train_test_split
 from sklearn.pipeline import FeatureUnion, Pipeline
+from sklearn.svm import LinearSVC
 
 from prepare import (
     CACHE_DIR,
@@ -144,12 +144,12 @@ vectorizer = FeatureUnion([
     )),
 ])
 
-# Classifier -- balanced class weights handle the ~5% fake rate
-classifier = LogisticRegression(
+# Classifier -- linear margin model for sparse high-dimensional text features
+classifier = LinearSVC(
     class_weight="balanced",
-    max_iter=1000,
-    C=12.0,
-    solver="liblinear",
+    max_iter=5000,
+    C=1.0,
+    dual="auto",
 )
 
 # Pipeline: vectorizer -> classifier
@@ -161,11 +161,11 @@ pipeline = Pipeline([
 # Train
 pipeline.fit(X_train, y_train)
 
-y_prob = pipeline.predict_proba(X_val)[:, 1]
-y_pred = (y_prob >= 0.5).astype(int)
+y_prob = pipeline.decision_function(X_val)
+y_pred = (y_prob >= 0.0).astype(int)
 
 # Tune the decision threshold for macro F1 on the imbalanced validation set.
-best_threshold = 0.5
+best_threshold = 0.0
 best_score = f1_score(y_val, y_pred, average="macro", zero_division=0)
 candidate_thresholds = np.unique(np.round(y_prob, 6))
 for threshold in candidate_thresholds:
