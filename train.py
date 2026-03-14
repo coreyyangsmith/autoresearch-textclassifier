@@ -166,7 +166,8 @@ y_pred = (y_prob >= 0.5).astype(int)
 # Tune the decision threshold for macro F1 on the imbalanced validation set.
 best_threshold = 0.5
 best_score = f1_score(y_val, y_pred, average="macro", zero_division=0)
-for threshold in np.linspace(0.1, 0.9, 81):
+candidate_thresholds = np.unique(np.round(y_prob, 6))
+for threshold in candidate_thresholds:
     candidate_pred = (y_prob >= threshold).astype(int)
     candidate_score = f1_score(y_val, candidate_pred, average="macro", zero_division=0)
     if candidate_score > best_score:
