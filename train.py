@@ -152,19 +152,19 @@ X_val = X_val_text.reset_index(drop=True).str.cat(
 )
 
 # HashingVectorizer with large hash space: unlimited vocabulary, sublinear TF via TfidfTransformer
-hash_word = Pipeline([
+hash_uni = Pipeline([
     ("hv", HashingVectorizer(
-        ngram_range=(1, 1),  # unigrams only -- faster convergence
-        n_features=2**19,    # 512k buckets for unigrams (much fewer collisions than bigrams)
+        ngram_range=(1, 1),  # unigrams only
+        n_features=2**19,    # 512k buckets
         alternate_sign=False,
         norm="l2",
     )),
     ("tfidf", TfidfTransformer(sublinear_tf=True, use_idf=True)),
 ])
 
-hash_bigram = Pipeline([
+hash_bi = Pipeline([
     ("hv", HashingVectorizer(
-        ngram_range=(2, 2),  # bigrams only -- separate space
+        ngram_range=(2, 2),  # bigrams only in separate space
         n_features=2**19,    # 512k buckets
         alternate_sign=False,
         norm="l2",
@@ -178,18 +178,18 @@ char_vec = TfidfVectorizer(
     ngram_range=(3, 5),
     sublinear_tf=True,
     min_df=1,
-    max_features=80_000,
+    max_features=60_000,
 )
 
-X_train_word = hash_word.fit_transform(X_train)
-X_val_word = hash_word.transform(X_val)
-X_train_bigram = hash_bigram.fit_transform(X_train)
-X_val_bigram = hash_bigram.transform(X_val)
+X_train_uni = hash_uni.fit_transform(X_train)
+X_val_uni = hash_uni.transform(X_val)
+X_train_bi = hash_bi.fit_transform(X_train)
+X_val_bi = hash_bi.transform(X_val)
 X_train_char = char_vec.fit_transform(X_train)
 X_val_char = char_vec.transform(X_val)
 
-X_train_tfidf = sp.hstack([1.25 * X_train_word, 1.0 * X_train_bigram, 1.0 * X_train_char], format="csr")
-X_val_tfidf = sp.hstack([1.25 * X_val_word, 1.0 * X_val_bigram, 1.0 * X_val_char], format="csr")
+X_train_tfidf = sp.hstack([1.25 * X_train_uni, 1.0 * X_train_bi, 1.0 * X_train_char], format="csr")
+X_val_tfidf = sp.hstack([1.25 * X_val_uni, 1.0 * X_val_bi, 1.0 * X_val_char], format="csr")
 
 # Explicit field features: presence + log-length per text field + binary metadata
 field_train = build_field_features(df_train_split)
