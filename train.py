@@ -165,7 +165,7 @@ hash_uni = Pipeline([
 hash_bi = Pipeline([
     ("hv", HashingVectorizer(
         ngram_range=(2, 2),
-        n_features=2**18,    # 262k buckets for bigrams (fewer collisions for bigrams vs 1M combined)
+        n_features=2**19,    # 512k buckets for bigrams
         alternate_sign=False,
         norm="l2",
     )),
@@ -203,7 +203,7 @@ X_val_combined = sp.hstack([X_val_tfidf, sp.csr_matrix(field_val_scaled * 5.0)])
 # Classifier -- linear margin model for sparse high-dimensional text features
 classifier = LinearSVC(
     class_weight={0: 1.0, 1: 10.0},
-    max_iter=5000,
+    max_iter=4000,
     C=1.0,
     dual="auto",
 )
