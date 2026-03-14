@@ -76,14 +76,22 @@ def build_field_features(df_split: pd.DataFrame) -> np.ndarray:
     """Field-level presence and length features for fake job detection."""
     text_cols = ["title", "company_profile", "description", "requirements", "benefits"]
     feats = []
+    presence = {}
     for col in text_cols:
         text = df_split[col].fillna("")
-        feats.append((text.str.len() > 0).astype(float))      # field presence
-        feats.append(np.log1p(text.str.len()).values)           # log length
+        p = (text.str.len() > 0).astype(float)
+        presence[col] = p
+        feats.append(p)                                        # field presence
+        feats.append(np.log1p(text.str.len()).values)          # log length
     # Binary metadata fields
-    feats.append(df_split["has_company_logo"].fillna(0).astype(float).values)
-    feats.append(df_split["has_questions"].fillna(0).astype(float).values)
-    feats.append(df_split["telecommuting"].fillna(0).astype(float).values)
+    logo = df_split["has_company_logo"].fillna(0).astype(float)
+    questions = df_split["has_questions"].fillna(0).astype(float)
+    telecommute = df_split["telecommuting"].fillna(0).astype(float)
+    feats.extend([logo.values, questions.values, telecommute.values])
+    # Key interaction features: absence of both company_profile and requirements = strong fake signal
+    feats.append((presence["company_profile"] * presence["requirements"]).values)
+    feats.append((logo * presence["company_profile"]).values)
+    feats.append(((1 - presence["company_profile"]) * (1 - logo)).values)
     return np.column_stack(feats).astype(np.float32)
 
 
