@@ -165,7 +165,7 @@ hash_uni = Pipeline([
 hash_bi = Pipeline([
     ("hv", HashingVectorizer(
         ngram_range=(2, 2),
-        n_features=2**19,    # 512k buckets for bigrams
+        n_features=2**20,    # 1M buckets for bigrams (max coverage)
         alternate_sign=False,
         norm="l2",
     )),
@@ -177,7 +177,7 @@ char_vec = TfidfVectorizer(
     ngram_range=(4, 6),
     sublinear_tf=True,
     min_df=1,
-    max_features=70_000,
+    max_features=38_000,
 )
 
 X_train_uni = hash_uni.fit_transform(X_train)
