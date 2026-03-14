@@ -197,8 +197,8 @@ scaler = MaxAbsScaler()
 field_train_scaled = scaler.fit_transform(field_train)
 field_val_scaled = scaler.transform(field_val)
 
-X_train_combined = sp.hstack([X_train_tfidf, sp.csr_matrix(field_train_scaled * 3.0)])
-X_val_combined = sp.hstack([X_val_tfidf, sp.csr_matrix(field_val_scaled * 3.0)])
+X_train_combined = sp.hstack([X_train_tfidf, sp.csr_matrix(field_train_scaled * 7.0)])
+X_val_combined = sp.hstack([X_val_tfidf, sp.csr_matrix(field_val_scaled * 7.0)])
 
 # Classifier -- linear margin model for sparse high-dimensional text features
 classifier = LinearSVC(
