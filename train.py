@@ -17,6 +17,7 @@ from sklearn.metrics import f1_score
 from sklearn.model_selection import train_test_split
 from sklearn.pipeline import FeatureUnion, Pipeline
 from sklearn.preprocessing import MaxAbsScaler
+from lightgbm import LGBMClassifier
 from sklearn.svm import LinearSVC
 
 from prepare import (
@@ -192,14 +193,34 @@ X_val_combined = sp.hstack([X_val_tfidf, sp.csr_matrix(field_val_scaled * 5.0)])
 # Classifier -- linear margin model for sparse high-dimensional text features
 classifier = LinearSVC(
     class_weight={0: 1.0, 1: 10.0},
-    max_iter=2500,
-    C=0.45,
+    max_iter=5000,
+    C=1.0,
     dual="auto",
 )
 
 classifier.fit(X_train_combined, y_train)
+y_prob_svc = classifier.decision_function(X_val_combined)
 
-y_prob = classifier.decision_function(X_val_combined)
+# Lightweight LightGBM on field features only -- fast tree model for structured metadata
+lgbm = LGBMClassifier(
+    n_estimators=200,
+    num_leaves=15,
+    learning_rate=0.1,
+    class_weight={0: 1.0, 1: 10.0},
+    n_jobs=1,
+    verbose=-1,
+    random_state=42,
+)
+lgbm.fit(field_train_scaled, y_train)
+y_prob_lgbm = lgbm.predict_proba(field_val_scaled)[:, 1]
+
+# Normalize SVC scores to [0,1] range before blending
+from sklearn.preprocessing import MinMaxScaler
+svc_scaler = MinMaxScaler()
+y_prob_svc_norm = svc_scaler.fit_transform(y_prob_svc.reshape(-1, 1)).ravel()
+
+# Blend: 90% SVC text model + 10% LGBM field model
+y_prob = 0.9 * y_prob_svc_norm + 0.1 * y_prob_lgbm
 y_pred = (y_prob >= 0.0).astype(int)
 
 # Tune the decision threshold for macro F1 on the imbalanced validation set.
