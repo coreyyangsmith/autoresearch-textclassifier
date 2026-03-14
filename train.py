@@ -155,7 +155,7 @@ X_val = X_val_text.reset_index(drop=True).str.cat(
 hash_uni = Pipeline([
     ("hv", HashingVectorizer(
         ngram_range=(1, 1),
-        n_features=2**19,    # 512k buckets
+        n_features=2**20,    # 1M buckets for unigrams (max vocab coverage)
         alternate_sign=False,
         norm="l2",
     )),
@@ -176,8 +176,8 @@ char_vec = TfidfVectorizer(
     analyzer="char_wb",
     ngram_range=(3, 5),
     sublinear_tf=True,
-    min_df=2,
-    max_features=45_000,
+    min_df=1,
+    max_features=38_000,
 )
 
 X_train_uni = hash_uni.fit_transform(X_train)
