@@ -81,6 +81,9 @@ def build_metadata_tokens(df: pd.DataFrame) -> pd.Series:
         "required_education",
         "industry",
         "function",
+        "location",
+        "department",
+        "salary_range",
     ]
     token_parts = []
     for column in columns:
