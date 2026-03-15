@@ -169,7 +169,7 @@ hash_bi = Pipeline([
         alternate_sign=False,
         norm="l2",
     )),
-    ("tfidf", TfidfTransformer(sublinear_tf=True, use_idf=False)),
+    ("tfidf", TfidfTransformer(sublinear_tf=True, use_idf=True)),
 ])
 
 char_vec = TfidfVectorizer(
@@ -202,7 +202,7 @@ X_val_combined = sp.hstack([X_val_tfidf, sp.csr_matrix(field_val_scaled * 5.0)])
 
 # Classifier -- linear margin model for sparse high-dimensional text features
 classifier = LinearSVC(
-    class_weight={0: 1.0, 1: 10.0},
+    class_weight={0: 1.0, 1: 9.0},
     max_iter=4000,
     C=1.0,
     dual="auto",
