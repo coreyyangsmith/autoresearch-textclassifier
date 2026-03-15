@@ -174,7 +174,7 @@ hash_bi = Pipeline([
 
 char_vec = TfidfVectorizer(
     analyzer="char_wb",
-    ngram_range=(3, 5),
+    ngram_range=(3, 4),
     sublinear_tf=True,
     min_df=1,
     max_features=25_000,
@@ -182,10 +182,10 @@ char_vec = TfidfVectorizer(
 
 char_vec2 = TfidfVectorizer(
     analyzer="char_wb",
-    ngram_range=(4, 6),
+    ngram_range=(5, 6),
     sublinear_tf=True,
     min_df=1,
-    max_features=20_000,
+    max_features=15_000,
 )
 
 X_train_uni = hash_uni.fit_transform(X_train)
@@ -197,8 +197,8 @@ X_val_char = char_vec.transform(X_val)
 X_train_char2 = char_vec2.fit_transform(X_train)
 X_val_char2 = char_vec2.transform(X_val)
 
-X_train_tfidf = sp.hstack([1.25 * X_train_uni, 1.0 * X_train_bi, 1.0 * X_train_char, 0.75 * X_train_char2], format="csr")
-X_val_tfidf = sp.hstack([1.25 * X_val_uni, 1.0 * X_val_bi, 1.0 * X_val_char, 0.75 * X_val_char2], format="csr")
+X_train_tfidf = sp.hstack([1.25 * X_train_uni, 1.0 * X_train_bi, 1.0 * X_train_char, 1.0 * X_train_char2], format="csr")
+X_val_tfidf = sp.hstack([1.25 * X_val_uni, 1.0 * X_val_bi, 1.0 * X_val_char, 1.0 * X_val_char2], format="csr")
 
 # Explicit field features: presence + log-length per text field + binary metadata
 field_train = build_field_features(df_train_split)
