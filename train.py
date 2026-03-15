@@ -155,7 +155,7 @@ X_val = X_val_text.reset_index(drop=True).str.cat(
 hash_uni = Pipeline([
     ("hv", HashingVectorizer(
         ngram_range=(1, 1),
-        n_features=2**20,    # 1M buckets for unigrams
+        n_features=2**19,    # 512k buckets
         alternate_sign=False,
         norm="l2",
     )),
@@ -165,11 +165,11 @@ hash_uni = Pipeline([
 hash_bi = Pipeline([
     ("hv", HashingVectorizer(
         ngram_range=(2, 2),
-        n_features=2**20,    # 1M buckets for bigrams
+        n_features=2**19,    # 512k buckets for bigrams
         alternate_sign=False,
         norm="l2",
     )),
-    ("tfidf", TfidfTransformer(sublinear_tf=True, use_idf=True)),
+    ("tfidf", TfidfTransformer(sublinear_tf=True, use_idf=False)),
 ])
 
 char_vec = TfidfVectorizer(
