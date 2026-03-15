@@ -174,19 +174,30 @@ hash_bi = Pipeline([
 
 char_vec = TfidfVectorizer(
     analyzer="char_wb",
-    ngram_range=(3, 4),
+    ngram_range=(4, 6),
     sublinear_tf=True,
     min_df=1,
-    max_features=25_000,
+    max_features=38_000,
 )
 
-char_vec2 = TfidfVectorizer(
-    analyzer="char_wb",
-    ngram_range=(5, 6),
-    sublinear_tf=True,
-    min_df=1,
-    max_features=15_000,
-)
+meta_train_tok = build_metadata_tokens(df_train_split)
+meta_val_tok = build_metadata_tokens(df_val_split)
+
+# Separate metadata vectorizer -- gives metadata tokens more influence since they have
+# much smaller TF relative to long text documents when combined
+hash_meta = Pipeline([
+    ("hv", HashingVectorizer(
+        ngram_range=(1, 1),
+        n_features=2**14,    # 16k buckets (metadata has few unique tokens)
+        alternate_sign=False,
+        norm="l2",
+        binary=True,
+    )),
+    ("tfidf", TfidfTransformer(sublinear_tf=False, use_idf=True)),
+])
+
+X_train_text_only = X_train_text.reset_index(drop=True)  # text without metadata tokens
+X_val_text_only = X_val_text.reset_index(drop=True)
 
 X_train_uni = hash_uni.fit_transform(X_train)
 X_val_uni = hash_uni.transform(X_val)
@@ -194,11 +205,11 @@ X_train_bi = hash_bi.fit_transform(X_train)
 X_val_bi = hash_bi.transform(X_val)
 X_train_char = char_vec.fit_transform(X_train)
 X_val_char = char_vec.transform(X_val)
-X_train_char2 = char_vec2.fit_transform(X_train)
-X_val_char2 = char_vec2.transform(X_val)
+X_train_meta = hash_meta.fit_transform(meta_train_tok)
+X_val_meta = hash_meta.transform(meta_val_tok)
 
-X_train_tfidf = sp.hstack([1.25 * X_train_uni, 1.0 * X_train_bi, 1.0 * X_train_char, 1.0 * X_train_char2], format="csr")
-X_val_tfidf = sp.hstack([1.25 * X_val_uni, 1.0 * X_val_bi, 1.0 * X_val_char, 1.0 * X_val_char2], format="csr")
+X_train_tfidf = sp.hstack([1.25 * X_train_uni, 1.0 * X_train_bi, 1.0 * X_train_char, 2.0 * X_train_meta], format="csr")
+X_val_tfidf = sp.hstack([1.25 * X_val_uni, 1.0 * X_val_bi, 1.0 * X_val_char, 2.0 * X_val_meta], format="csr")
 
 # Explicit field features: presence + log-length per text field + binary metadata
 field_train = build_field_features(df_train_split)
